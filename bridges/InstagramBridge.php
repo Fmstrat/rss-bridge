@@ -45,7 +45,7 @@ class InstagramBridge extends BridgeAbstract {
 		)
 	);
 
-	const CSRF_TOKEN = '';
+	const INSTA_COOKIE = '';
 
 	const USER_QUERY_HASH = '58b6785bea111c67129decbe6a448951';
 	const TAG_QUERY_HASH = '9b498c08113f1e09617a1703c22b2f32';
@@ -64,7 +64,7 @@ class InstagramBridge extends BridgeAbstract {
 
 		if($key == null) {
 			$headers = array();
-			if (CSRF_TOKEN != "") $headers[] = "X-CSRFToken: " . CSRF_TOKEN;
+			if (INSTA_COOKIE != "") $headers[] = INSTA_COOKIE;
 			$data = getContents(self::URI . 'web/search/topsearch/?query=' . $username, $headers);
 
 			foreach(json_decode($data)->users as $user) {
@@ -215,7 +215,7 @@ class InstagramBridge extends BridgeAbstract {
 	protected function getSinglePostData($uri) {
 		$shortcode = explode('/', $uri)[4];
 		$headers = array();
-		if (CSRF_TOKEN != "") $headers[] = "X-CSRFToken: " . CSRF_TOKEN;
+		if (INSTA_COOKIE != "") $headers[] = INSTA_COOKIE;
 		$data = getContents(self::URI .
 					'graphql/query/?query_hash=' .
 					self::SHORTCODE_QUERY_HASH .
@@ -228,7 +228,7 @@ class InstagramBridge extends BridgeAbstract {
 
 	protected function getInstagramJSON($uri) {
 		$headers = array();
-		if (CSRF_TOKEN != "") $headers[] = "X-CSRFToken: " . CSRF_TOKEN;
+		if (INSTA_COOKIE != "") $headers[] = INSTA_COOKIE;
 
 		if(!is_null($this->getInput('u'))) {
 
