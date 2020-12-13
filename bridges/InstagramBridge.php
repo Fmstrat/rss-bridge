@@ -50,7 +50,21 @@ class InstagramBridge extends BridgeAbstract {
 	const TAG_QUERY_HASH = '9b498c08113f1e09617a1703c22b2f32';
 	const SHORTCODE_QUERY_HASH = '865589822932d1b43dfe312121dd353a';
 
+	public $cookies = [];
+
+	public $headers = [
+		"Host" => "www.instagram.com",
+		"User-Agent" => "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:83.0) Gecko/20100101 Firefox/83.0",
+		"Accept" => "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+		"Accept-Language" => "en-US,en;q=0.8,fr;q=0.7,ja;q=0.5,de;q=0.3,es;q=0.2",
+		"Accept-Encoding" => "gzip, deflate, br",
+		"DNT" => "1",
+		"Connection" => "keep-alive",
+		"Upgrade-Insecure-Requests" => "1"
+	];
+
 	protected function getInstagramUserId($username) {
+		$this->login();
 
 		if(is_numeric($username)) return $username;
 
@@ -62,7 +76,7 @@ class InstagramBridge extends BridgeAbstract {
 		$key = $cache->loadData();
 
 		if($key == null) {
-				$data = getContents(self::URI . 'web/search/topsearch/?query=' . $username);
+				$data = $this->getContents(self::URI . 'web/search/topsearch/?query=' . $username);
 
 				foreach(json_decode($data)->users as $user) {
 					if(strtolower($user->user->username) === strtolower($username)) {
@@ -76,6 +90,96 @@ class InstagramBridge extends BridgeAbstract {
 		}
 		return $key;
 
+	}
+
+	protected function buildHeader() {
+		$header = [];
+		foreach($this->headers as $key => $value) {
+			$header[] = $key . ": " . $value;
+		}
+		if (!empty($this->cookies)) {
+			$header[] = "Cookie: " . $this->buildCookie();
+		}
+		return $header;
+	}
+
+	protected function buildCookie() {
+		$cookie = "";
+		foreach($this->cookies as $key => $value) {
+			if ($cookie == "") {
+				$cookie .= $key . "=" . $value;
+			} else {
+				$cookie .= "; " . $key . "=" . $value;
+			}
+		}
+		return $cookie;
+	}
+
+	protected function updateHeader($res) {
+		preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $res['header'], $matches);
+		foreach($matches[1] as $item) {
+			$values = explode("=", $item, 2);
+			if ($values[1] != "" && $values[1] != '""')
+				$this->cookies[$values[0]] = $values[1];
+		}
+		Debug::log("Updated headers: " . json_encode($this->headers));
+		Debug::log("Updated cookies: " . json_encode($this->cookies));
+		return $this->buildHeader();
+	}
+
+	protected function getContents($url, $header = array(), $opts = array(), $returnHeader = false) {
+		if (empty($header)) {
+			$header = $this->buildHeader();
+		}
+		$retVal = getContents($url, $header, $opts, true);
+		$this->updateHeader($retVal);
+		return ($returnHeader === true) ? $retVal : $retVal['content'];
+	}
+
+	protected function login() {
+		// TODO: Pull these from the RSSBridge configuration
+		$username = "";
+		$password = "";
+
+		$encPassword = '#PWD_INSTAGRAM_BROWSER:0:' . time() . ':' . $password;
+
+		$cookies = [
+			"ig_did" => "",
+			"csrftoken" => "",
+			"mid" => "",
+			"ig_nrcb" => 1,
+			"rur" => "FTW",
+			"ds_user_id" => "",
+			"sessionid" => "",
+			"urlgen" => ""
+		];
+
+		$this->getContents(self::URI . 'accounts/login/');
+
+		$post = [
+			'username' => $username,
+			'enc_password' => $encPassword
+		];
+		// We have to use integers since RSSBridge converts the elements to strings (to avoid warnings)
+		// CURLOPT_HTTP_VERSION = 84
+		// CURL_HTTP_VERSION_1_1 = 2
+		// CURLOPT_CUSTOMREQUEST = 10036
+		// CURLOPT_POSTFIELDS = 10015
+		$opts = [
+			84 => 2,
+			10036 => 'POST',
+			10015 => json_encode($post)
+		];
+
+		$header = $this->buildHeader();
+		$header[] = "Referer: https://www.instagram.com/accounts/login/";
+		foreach($this->cookies as $key => $value) {
+			if ($key == "csrftoken") {
+				$header[] = "X-CSRFToken: " . $value;
+				break;
+			}
+		}
+		$res = $this->getContents(self::URI . 'accounts/login/ajax/', $header, $opts);
 	}
 
 	public function collectData(){
@@ -211,7 +315,7 @@ class InstagramBridge extends BridgeAbstract {
 
 	protected function getSinglePostData($uri) {
 		$shortcode = explode('/', $uri)[4];
-		$data = getContents(self::URI .
+		$data = $this->getContents(self::URI .
 					'graphql/query/?query_hash=' .
 					self::SHORTCODE_QUERY_HASH .
 					'&variables={"shortcode"%3A"' .
@@ -227,7 +331,7 @@ class InstagramBridge extends BridgeAbstract {
 
 			$userId = $this->getInstagramUserId($this->getInput('u'));
 
-			$data = getContents(self::URI .
+			$data = $this->getContents(self::URI .
 								'graphql/query/?query_hash=' .
 								 self::USER_QUERY_HASH .
 								 '&variables={"id"%3A"' .
@@ -236,7 +340,7 @@ class InstagramBridge extends BridgeAbstract {
 			return json_decode($data);
 
 		} elseif(!is_null($this->getInput('h'))) {
-			$data = getContents(self::URI .
+			$data = $this->getContents(self::URI .
 					'graphql/query/?query_hash=' .
 					 self::TAG_QUERY_HASH .
 					 '&variables={"tag_name"%3A"' .
@@ -246,7 +350,7 @@ class InstagramBridge extends BridgeAbstract {
 
 		} else {
 
-			$html = getContents($uri)
+			$html = $this->getContents($uri)
 				or returnServerError('Could not request Instagram.');
 			$scriptRegex = '/window\._sharedData = (.*);<\/script>/';
 
